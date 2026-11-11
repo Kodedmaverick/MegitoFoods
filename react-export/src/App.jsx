@@ -38,7 +38,7 @@ function validate(f) {
   if (!f.email.trim()) e.email = 'Enter your email address.';
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) e.email = "That email doesn't look right. Check and try again.";
   if (!f.type) e.type = 'Choose your type of business.';
-  if (!f.products.trim()) e.products = 'Tell us which products you need.';
+  if (!f.products.trim()) e.products = 'Select at least one product.';
   if (!f.area.trim()) e.area = 'Tell us where you need delivery.';
   return e;
 }
@@ -47,8 +47,7 @@ function ProductImage({ p }) {
   if (!p.image) return <div className="placeholder" role="img" aria-label={'Photo of ' + p.name + ' coming soon'}><Icon name="image" size={24} />Photo coming soon</div>;
   return (
     <figure style={{ margin: 0 }}>
-      <img className="photo" src={p.image} alt={p.alt} loading="lazy" width="640" height="480" style={{ objectPosition: p.imagePos || 'center' }} />
-      {p.illustrative && <figcaption className="caption">Illustrative image, not actual stock</figcaption>}
+      <img className="photo" src={p.image} alt={p.alt} loading="lazy" width="640" height="480" style={{ objectPosition: p.imagePos || 'center', objectFit: p.fit || 'cover', background: p.fit ? '#7499b8' : undefined }} />
     </figure>
   );
 }
@@ -63,7 +62,7 @@ function ProductCard({ p, variation, onVariation, onEnquire }) {
         <h3>{p.name}</h3>
         <p className="body" style={{ fontSize: 14 }}>{p.description}</p>
         <span style={{ fontSize: 14, fontWeight: 600, marginTop: 4 }}>Weight: {p.packSize || 'kg sizes on request'}</span>
-        <span className="muted">{p.price || 'Request current pricing'}</span>
+        {p.price && <span className="muted">{p.price}</span>}
       </div>
       {p.variations.length > 0 && (
         <div className="vars" role="radiogroup" aria-label={'Choose a type of ' + p.name}>
@@ -107,7 +106,11 @@ export default function App() {
   }, [page]);
 
   const go = (p) => { setPage(p); setMenu(false); history.replaceState(null, '', '#' + p); window.scrollTo(0, 0); };
-  const enquire = (p, v) => { setForm(f => ({ ...f, products: p.name + (v ? ' — ' + v : '') })); setReady(false); go('contact'); };
+  const splitP = s => (s ? s.split('; ') : []);
+  const enquire = (p, v) => { const label = p.name + (v ? ' — ' + v : ''); setForm(f => { const cur = splitP(f.products); return { ...f, products: (cur.includes(label) ? cur : cur.concat(label)).join('; ') }; }); setReady(false); go('contact'); };
+  const togglePick = label => { const cur = splitP(form.products); const next = cur.includes(label) ? cur.filter(x => x !== label) : cur.concat(label); const nf = { ...form, products: next.join('; ') }; setForm(nf); setReady(false); if (submitted) setErrors(validate(nf)); };
+  const picked = splitP(form.products);
+  const pickGroups = CATS.filter(c => c.id !== 'all').map(c => ({ id: c.id, label: c.label, items: visible.filter(p => p.category === c.id).flatMap(p => (p.variations.length ? p.variations.map(v => p.name + ' — ' + v.name) : [p.name])) })).filter(g => g.items.length);
   const setVariation = (id, v) => setVars(s => ({ ...s, [id]: v }));
   const update = k => e => { const f = { ...form, [k]: e.target.value }; setForm(f); setReady(false); if (submitted) setErrors(validate(f)); };
   const submit = e => { e.preventDefault(); const er = validate(form); setSubmitted(true); setErrors(er); setReady(Object.keys(er).length === 0); };
@@ -293,7 +296,21 @@ export default function App() {
                     {['Hotel', 'Supermarket', 'Restaurant', 'Caterer', 'Other business'].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </Field>
-                <Field id="f-products" label="Products required" error={errors.products} help="For example: Chicken laps — Orobo, Crab"><input id="f-products" value={f.products} onChange={update('products')} {...inv('products')} /></Field>
+                <fieldset className="picks-field" aria-describedby="products-help">
+                  <legend>Products required {picked.length > 0 && <small>{picked.length} selected</small>}</legend>
+                  <div className="picks" style={{ borderColor: errors.products ? 'var(--error)' : undefined }}>
+                    {pickGroups.map(g => (
+                      <div key={g.id} className="pick-group">
+                        <span className="pick-label">{g.label}</span>
+                        <div className="vars">
+                          {g.items.map(label => { const on = picked.includes(label); return <button key={label} type="button" role="checkbox" aria-checked={on} className="chip" onClick={() => togglePick(label)}><Icon name={on ? 'check' : 'plus'} size={16} />{label}</button>; })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {errors.products && <span className="err">{errors.products}</span>}
+                  <span id="products-help" className="help">Select all that apply.</span>
+                </fieldset>
                 <div className="two">
                   <Field id="f-qty" label="Estimated quantities" optional help="Per order, and how often"><input id="f-qty" value={f.qty} onChange={update('qty')} /></Field>
                   <Field id="f-area" label="Delivery area" error={errors.area} help="Area of Lagos"><input id="f-area" value={f.area} onChange={update('area')} {...inv('area')} /></Field>
