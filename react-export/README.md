@@ -16,9 +16,15 @@ Keep `package.json` at the **root** of the repo (or set the host's Base Director
 - `src/styles.css`: design tokens and responsive rules (mobile menu under 1024px).
 - `public/assets/`: photos, logo and the illustrative product images (original PNGs kept).
 
+## Quote builder
+- `src/QuoteBuilder.jsx` handles products, pack quantities, one-off or repeat orders, address search and the delivery estimate.
+- Delivery = base fee + rate per km (driving distance from 43 Diya Street) + rate per kg. Rates and the minimum order are in `RATES` at the top of the file.
+- Address search uses OpenStreetMap (Nominatim) and driving distance uses OSRM. No API key needed. For high traffic, host your own Nominatim/OSRM or use a paid provider, as the public servers have usage limits.
+- Customers get a quote reference and can send the quote on WhatsApp (+234 803 789 8104), by email, or save it as a PDF.
+
 ## Before launch
 - Connect the enquiry form to a submission service. Until then it opens a prefilled email.
-- Add real photos for chicken wings, breast, whole chicken, croaker, mackerel, Kote and hake. These products show "Photo coming soon".
-- Confirm the map pin for 15 Diya Street, Gbagada.
+- Add real photos for products showing "Photo coming soon".
+- Confirm the map pin for 43 Diya Street, Ifako, Gbagada.
 - Confirm whether snails are in the current range (`SHOW_SNAILS` in `App.jsx`).
-- Add prices, selling units and pack sizes from the price document.
+- Prices come from the supplied price list (VAT exclusive). Edit `sizes` in `src/data/products.js` when prices change.
