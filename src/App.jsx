@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { icons } from 'lucide-react';
-import { PRODUCTS, CATS } from './data/products.js';
+import { PRODUCTS, CATS, naira } from './data/products.js';
+import QuoteBuilder, { addLineTo } from './QuoteBuilder.jsx';
+import { ProductDetail, CartDrawer } from './Cart.jsx';
 
-const ADDRESS = '15 Diya Street, Gbagada, Lagos, Nigeria';
+const ADDRESS = '43 Diya Street, Ifako, Gbagada, Lagos, Nigeria';
 const MAPS = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(ADDRESS);
 const EMBED = 'https://maps.google.com/maps?q=' + encodeURIComponent(ADDRESS) + '&z=16&output=embed';
 const PHONE = '+2348023004612', PHONE_LABEL = '+234 802 300 4612', EMAIL = 'megitofoods@yahoo.com';
@@ -52,26 +54,25 @@ function ProductImage({ p }) {
   );
 }
 
-function ProductCard({ p, variation, onVariation, onEnquire }) {
-  const sel = variation || (p.variations[0] && p.variations[0].name);
+function priceText(p, size) {
+  if (!p.sizes.length) return '';
+  if (p.sizes.length === 1) return naira(p.sizes[0].price) + ' · ' + p.sizes[0].label.toLowerCase();
+  const s = p.sizes.find(z => z.label === size);
+  return s ? naira(s.price) + ' · ' + s.label : 'From ' + naira(Math.min(...p.sizes.map(z => z.price)));
+}
+
+function ProductCard({ p, onOpen }) {
   return (
     <article className="card">
-      <ProductImage p={p} />
+      <div onClick={() => onOpen(p)} style={{ cursor: 'pointer' }}><ProductImage p={p} /></div>
       <div className="info">
         <span className="muted">{catLabel(p.category)}</span>
         <h3>{p.name}</h3>
         <p className="body" style={{ fontSize: 14 }}>{p.description}</p>
-        <span style={{ fontSize: 14, fontWeight: 600, marginTop: 4 }}>Weight: {p.packSize || 'kg sizes on request'}</span>
-        {p.price && <span className="muted">{p.price}</span>}
+        {p.sizes.length > 0 && <span style={{ fontSize: 16, fontWeight: 700, marginTop: 4 }}>{priceText(p)}</span>}
+        {!p.sizes.length && p.packSize && <span style={{ fontSize: 14, fontWeight: 600, marginTop: 4 }}>{p.packSize}</span>}
       </div>
-      {p.variations.length > 0 && (
-        <div className="vars" role="radiogroup" aria-label={'Choose a type of ' + p.name}>
-          {p.variations.map(v => (
-            <button key={v.id} type="button" role="radio" className="chip" aria-checked={sel === v.name} onClick={() => onVariation(p.id, v.name)}>{v.name}</button>
-          ))}
-        </div>
-      )}
-      <button type="button" className="btn btn-secondary btn-block" onClick={() => onEnquire(p, sel)}>Enquire about this product</button>
+      <button type="button" className="btn btn-secondary btn-block" onClick={() => onOpen(p)}><Icon name="shopping-bag" />Add to cart</button>
     </article>
   );
 }
@@ -92,6 +93,7 @@ export default function App() {
   const [cat, setCat] = useState('all');
   const [query, setQuery] = useState('');
   const [vars, setVars] = useState({});
+  const [sizes, setSizes] = useState({});
   const [form, setForm] = useState(Object.fromEntries(FIELDS.map(f => [f, ''])));
   const [errors, setErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
@@ -107,10 +109,12 @@ export default function App() {
 
   const go = (p) => { setPage(p); setMenu(false); history.replaceState(null, '', '#' + p); window.scrollTo(0, 0); };
   const splitP = s => (s ? s.split('; ') : []);
-  const enquire = (p, v) => { const label = p.name + (v ? ' — ' + v : ''); setForm(f => { const cur = splitP(f.products); return { ...f, products: (cur.includes(label) ? cur : cur.concat(label)).join('; ') }; }); setReady(false); go('contact'); };
-  const togglePick = label => { const cur = splitP(form.products); const next = cur.includes(label) ? cur.filter(x => x !== label) : cur.concat(label); const nf = { ...form, products: next.join('; ') }; setForm(nf); setReady(false); if (submitted) setErrors(validate(nf)); };
-  const picked = splitP(form.products);
-  const pickGroups = CATS.filter(c => c.id !== 'all').map(c => ({ id: c.id, label: c.label, items: visible.filter(p => p.category === c.id).flatMap(p => (p.variations.length ? p.variations.map(v => p.name + ' — ' + v.name) : [p.name])) })).filter(g => g.items.length);
+  const [lines, setLines] = useState([]);
+  const [detail, setDetail] = useState(null);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [toast, setToast] = useState('');
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(''), 4000); return () => clearTimeout(t); }, [toast]);
+  const addToCart = (p, v, size, qty) => { setLines(ls => { let out = ls; for (let i = 0; i < qty; i++) out = addLineTo(out, p.id, v || '', size || ''); return out; }); setDetail(null); setToast(qty + ' × ' + p.name + ' added to your cart'); };
   const setVariation = (id, v) => setVars(s => ({ ...s, [id]: v }));
   const update = k => e => { const f = { ...form, [k]: e.target.value }; setForm(f); setReady(false); if (submitted) setErrors(validate(f)); };
   const submit = e => { e.preventDefault(); const er = validate(form); setSubmitted(true); setErrors(er); setReady(Object.keys(er).length === 0); };
@@ -119,11 +123,12 @@ export default function App() {
     const q = query.trim().toLowerCase();
     return visible.filter(p => (cat === 'all' || p.category === cat) && (!q || [p.name, p.description, catLabel(p.category), ...p.variations.map(v => v.name)].join(' ').toLowerCase().includes(q)));
   }, [cat, query]);
-  const featured = visible.filter(p => p.image).slice(0, 8);
+  const featured = visible.filter(p => p.image && p.sizes.length).slice(0, 8);
   const f = form;
   const mailto = 'mailto:' + EMAIL + '?subject=' + encodeURIComponent('Quote request' + (f.company ? ' from ' + f.company : '')) + '&body=' + encodeURIComponent(`Name: ${f.name}\nCompany: ${f.company}\nEmail: ${f.email}\nPhone: ${f.phone}\nBusiness type: ${f.type}\nProducts: ${f.products}\nQuantities: ${f.qty}\nDelivery area: ${f.area}\n\n${f.message}`);
   const inv = k => (errors[k] ? { 'aria-invalid': 'true', 'aria-describedby': k + '-err' } : {});
-  const card = p => <ProductCard key={p.id} p={p} variation={vars[p.id]} onVariation={setVariation} onEnquire={enquire} />;
+  const card = p => <ProductCard key={p.id} p={p} onOpen={setDetail} />;
+  const packs = lines.reduce((t, l) => t + l.qty, 0);
 
   return (
     <>
@@ -134,6 +139,7 @@ export default function App() {
             {PAGES.map(([id, label]) => <button key={id} aria-current={page === id ? 'page' : undefined} onClick={() => go(id)}>{label}</button>)}
           </nav>
           <button className="btn btn-primary desk-cta" onClick={() => go('contact')}>Request a quote</button>
+          <button className="cart-btn" aria-label={'Cart, ' + packs + (packs === 1 ? ' item' : ' items')} onClick={() => { setCartOpen(true); setToast(''); setMenu(false); }}><Icon name="shopping-bag" size={18} /><span>Cart</span>{packs > 0 && <span className="cart-count" aria-hidden="true">{packs}</span>}</button>
           <button className="menu-btn" aria-expanded={menu} aria-controls="mobile-menu" onClick={() => setMenu(m => !m)}><Icon name={menu ? 'x' : 'menu'} />Menu</button>
         </div>
         {menu && (
@@ -181,7 +187,7 @@ export default function App() {
                 <img className="photo" src="/assets/delivery.jpg" alt="Megito Foods staff weighing frozen fish at a delivery truck" loading="lazy" />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'flex-start' }}>
                   <h2 className="h2">Supply for your business</h2>
-                  <p className="body">Tell us the products, quantities and how often you order. We'll confirm what's available, pack sizes and current pricing.</p>
+                  <p className="body">Tell us the products, quantities and how often you order. We'll confirm availability and delivery.</p>
                   <button className="btn btn-primary" onClick={() => go('supply')}>Business supply</button>
                 </div>
               </div>
@@ -199,7 +205,7 @@ export default function App() {
         {page === 'products' && (
           <section className="wrap" style={{ paddingTop: 32 }}>
             <h1 className="h2" style={{ marginBottom: 8 }}>Products</h1>
-            <p className="body" style={{ marginBottom: 20, maxWidth: 640 }}>Browse our frozen range. Pack sizes and prices are confirmed when you enquire.</p>
+            <p className="body" style={{ marginBottom: 20, maxWidth: 640 }}>Browse our frozen range. Pick a size to see its price, then send an enquiry.</p>
             <form className="search" role="search" onSubmit={e => e.preventDefault()} style={{ maxWidth: 520, marginBottom: 16 }}>
               <input type="search" aria-label="Search products" placeholder="Search products" value={query} onChange={e => setQuery(e.target.value)} />
               <span className="orb" aria-hidden="true"><Icon name="search" /></span>
@@ -268,66 +274,28 @@ export default function App() {
         )}
 
         {page === 'contact' && (
-          <section className="wrap narrow" style={{ paddingTop: 32 }}>
-            <div className="split" style={{ alignItems: 'start' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <button className="link" style={{ alignSelf: 'flex-start' }} onClick={() => go('products')}>Back to products</button>
-                  <h1 className="h2">Request a quote</h1>
-                  <p className="body">Tell us what you need and we'll get back to you to discuss products, quantities and current pricing.</p>
-                </div>
+          <>
+            <section className="wrap" style={{ paddingTop: 32 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 680, marginBottom: 32 }}>
+                <h1 className="h2">Build your quote</h1>
+                <p className="body">Add products and the number of packs you need, choose a one-off or repeat order, and we'll add it up with an estimated delivery charge.</p>
+              </div>
+              <QuoteBuilder lines={lines} setLines={setLines} showSnails={SHOW_SNAILS} />
+            </section>
+            <section className="wrap band" aria-labelledby="talk">
+              <h2 id="talk" style={{ fontSize: 22, fontWeight: 600, marginBottom: 16 }}>Prefer to talk to us?</h2>
+              <div style={{ maxWidth: 720 }}>
                 <dl className="facts">
                   <div><dt>Address</dt><dd>{ADDRESS}</dd></div>
                   <div><dt>Phone</dt><dd><a href={'tel:' + PHONE}>{PHONE_LABEL}</a></dd></div>
                   <div><dt>Email</dt><dd><a href={'mailto:' + EMAIL}>{EMAIL}</a></dd></div>
+                  <div><dt>Orders</dt><dd>Mrs Margaret Udoh<br /><span className="muted">Orders, key accounts and WhatsApp orders</span><br /><a href="https://wa.me/2348037898104">WhatsApp +234 803 789 8104</a></dd></div>
+                  <div><dt>Hours</dt><dd>Orders and deliveries 7 days a week</dd></div>
+                  <div><dt>Company</dt><dd>Startup (Nigeria) Limited, trading as Megito Foods<br /><span className="muted">RC 152536</span></dd></div>
                 </dl>
               </div>
-              <form className="form" onSubmit={submit} noValidate aria-label="Quotation enquiry">
-                <div className="note">This form is a preview and isn't connected yet. To send an enquiry today, email <a href={'mailto:' + EMAIL}>{EMAIL}</a>.</div>
-                <div className="two">
-                  <Field id="f-name" label="Your name" error={errors.name}><input id="f-name" autoComplete="name" value={f.name} onChange={update('name')} {...inv('name')} /></Field>
-                  <Field id="f-company" label="Company" error={errors.company}><input id="f-company" autoComplete="organization" value={f.company} onChange={update('company')} {...inv('company')} /></Field>
-                  <Field id="f-email" label="Email" error={errors.email}><input id="f-email" type="email" inputMode="email" autoComplete="email" value={f.email} onChange={update('email')} {...inv('email')} /></Field>
-                  <Field id="f-phone" label="Phone" optional><input id="f-phone" type="tel" inputMode="tel" autoComplete="tel" value={f.phone} onChange={update('phone')} /></Field>
-                </div>
-                <Field id="f-type" label="Type of business" error={errors.type}>
-                  <select id="f-type" value={f.type} onChange={update('type')} {...inv('type')}>
-                    <option value="" disabled>Choose one</option>
-                    {['Hotel', 'Supermarket', 'Restaurant', 'Caterer', 'Other business'].map(o => <option key={o}>{o}</option>)}
-                  </select>
-                </Field>
-                <fieldset className="picks-field" aria-describedby="products-help">
-                  <legend>Products required {picked.length > 0 && <small>{picked.length} selected</small>}</legend>
-                  <div className="picks" style={{ borderColor: errors.products ? 'var(--error)' : undefined }}>
-                    {pickGroups.map(g => (
-                      <div key={g.id} className="pick-group">
-                        <span className="pick-label">{g.label}</span>
-                        <div className="vars">
-                          {g.items.map(label => { const on = picked.includes(label); return <button key={label} type="button" role="checkbox" aria-checked={on} className="chip" onClick={() => togglePick(label)}><Icon name={on ? 'check' : 'plus'} size={16} />{label}</button>; })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {errors.products && <span className="err">{errors.products}</span>}
-                  <span id="products-help" className="help">Select all that apply.</span>
-                </fieldset>
-                <div className="two">
-                  <Field id="f-qty" label="Estimated quantities" optional help="Per order, and how often"><input id="f-qty" value={f.qty} onChange={update('qty')} /></Field>
-                  <Field id="f-area" label="Delivery area" error={errors.area} help="Area of Lagos"><input id="f-area" value={f.area} onChange={update('area')} {...inv('area')} /></Field>
-                </div>
-                <Field id="f-message" label="Message" optional><textarea id="f-message" rows={4} value={f.message} onChange={update('message')} /></Field>
-                <button type="submit" className="btn btn-primary btn-block">Check enquiry</button>
-                {submitted && Object.keys(errors).length > 0 && <p role="alert" className="err">Please fix the highlighted fields.</p>}
-                {ready && (
-                  <div role="status" className="tile" style={{ padding: 16 }}>
-                    <strong>Your enquiry hasn't been sent</strong>
-                    <span className="body" style={{ fontSize: 14 }}>Online sending isn't set up yet. Open it as an email instead and press send.</span>
-                    <a href={mailto} style={{ fontWeight: 600, fontSize: 14 }}>Open as email to {EMAIL}</a>
-                  </div>
-                )}
-              </form>
-            </div>
-          </section>
+            </section>
+          </>
         )}
 
         {(page === 'home' || page === 'contact') && (
@@ -335,11 +303,11 @@ export default function App() {
             <div className="split" style={{ gap: 24, alignItems: 'stretch' }}>
               <div className="tile" style={{ justifyContent: 'center', alignItems: 'flex-start', gap: 16 }}>
                 <h2 id="find-us" className="h2">Find us</h2>
-                <address style={{ fontStyle: 'normal' }}>15 Diya Street<br />Gbagada, Lagos<br />Nigeria</address>
+                <address style={{ fontStyle: 'normal' }}>43 Diya Street, Ifako<br />Gbagada, Lagos<br />Nigeria</address>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 14 }}><a href={'tel:' + PHONE}>{PHONE_LABEL}</a><a href={'mailto:' + EMAIL}>{EMAIL}</a></div>
                 <a className="btn btn-secondary" href={MAPS} target="_blank" rel="noopener noreferrer"><Icon name="navigation" />Get directions</a>
               </div>
-              <iframe className="map" title="Map showing 15 Diya Street, Gbagada, Lagos" src={EMBED} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+              <iframe className="map" title="Map showing 43 Diya Street, Ifako, Gbagada, Lagos" src={EMBED} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
             </div>
           </section>
         )}
@@ -348,7 +316,7 @@ export default function App() {
           <div className="cta">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 520 }}>
               <span style={{ fontSize: 22, fontWeight: 600 }}>Planning your next order?</span>
-              <span style={{ color: '#ebebeb' }}>Tell us the products, quantities and delivery area, and we'll come back with current pricing.</span>
+              <span style={{ color: '#ebebeb' }}>Tell us the products, quantities and delivery area, and we'll confirm your order.</span>
             </div>
             <button className="btn btn-primary" onClick={() => go('contact')}>Request a quote</button>
           </div>
@@ -368,6 +336,9 @@ export default function App() {
           </nav>
         </div>
       </footer>
+      {detail && <ProductDetail p={detail} onClose={() => setDetail(null)} onAdd={addToCart} />}
+      {cartOpen && <CartDrawer lines={lines} setLines={setLines} onClose={() => setCartOpen(false)} onCheckout={() => { setCartOpen(false); go('contact'); }} />}
+      {toast && <div className="toast" role="status"><Icon name="check" /><span>{toast}</span><button type="button" onClick={() => { setCartOpen(true); setToast(''); }}>View cart</button></div>}
     </>
   );
 }
